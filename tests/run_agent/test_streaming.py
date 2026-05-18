@@ -811,6 +811,59 @@ class TestCodexStreamCallbacks:
         response = agent._run_codex_stream({}, client=mock_client)
         assert "Hello from Codex!" in deltas
 
+    def test_codex_stream_uses_completed_terminal_event_when_final_response_is_stale(self):
+        """Custom Responses relays can stream response.completed while SDK final is stale.
+
+        In that case the completed output item must not be normalized as an
+        incomplete Codex turn just because stream.get_final_response() still
+        says status=in_progress and has empty output.
+        """
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key",
+            base_url="https://openrouter.ai/api/v1",
+            model="test/model",
+            quiet_mode=True,
+            skip_context_files=True,
+            skip_memory=True,
+        )
+        agent.api_mode = "codex_responses"
+        agent._interrupt_requested = False
+
+        output_item = SimpleNamespace(
+            id="msg_completed",
+            type="message",
+            role="assistant",
+            status="completed",
+            phase="final_answer",
+            content=[SimpleNamespace(type="output_text", text="done")],
+        )
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.__iter__ = MagicMock(return_value=iter([
+            SimpleNamespace(type="response.output_item.done", item=output_item),
+            SimpleNamespace(
+                type="response.completed",
+                response=SimpleNamespace(status="completed", output=[], incomplete_details=None),
+            ),
+        ]))
+        # Mirrors the observed failure: the SDK/custom relay final object kept
+        # the earlier in_progress status even though the stream ended completed.
+        mock_stream.get_final_response.return_value = SimpleNamespace(
+            status="in_progress",
+            output=[],
+            incomplete_details=None,
+        )
+
+        response = agent._run_codex_stream({}, client=SimpleNamespace(responses=SimpleNamespace(stream=MagicMock(return_value=mock_stream))))
+
+        assert response.status == "completed"
+        normalized = agent._get_transport().normalize_response(response)
+        assert normalized.finish_reason == "stop"
+        assert normalized.content == "done"
+
     def test_codex_stream_refreshes_activity_on_every_event(self):
         from run_agent import AIAgent
 

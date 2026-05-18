@@ -184,13 +184,14 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     has_tool_calls = False
     first_delta_fired = False
     # Accumulate streamed text so we can recover if get_final_response()
-    # returns empty output (e.g. chatgpt.com backend-api sends
-    # response.incomplete instead of response.completed).
+    # returns empty output (e.g. chatgpt.com/backend-api/codex returns
+    # terminal response.output=[] while items were streamed separately).
     agent._codex_streamed_text_parts: list = []
     for attempt in range(max_stream_retries + 1):
         if agent._interrupt_requested:
             raise InterruptedError("Agent interrupted before Codex stream retry")
         collected_output_items: list = []
+        terminal_response = None
         try:
             with active_client.responses.stream(**api_kwargs) as stream:
                 for event in stream:
@@ -198,6 +199,8 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                     if agent._interrupt_requested:
                         break
                     event_type = getattr(event, "type", "")
+                    if event_type in {"response.completed", "response.incomplete", "response.failed"}:
+                        terminal_response = getattr(event, "response", None)
                     # Fire callbacks on text content deltas (suppress during tool calls)
                     if "output_text.delta" in event_type or event_type == "response.output_text.delta":
                         delta_text = getattr(event, "delta", "")
@@ -241,6 +244,13 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
                             agent._client_log_context(),
                         )
                 final_response = stream.get_final_response()
+                # The SDK/custom relay final object can be stale: in the
+                # observed failure it kept the earlier status=in_progress even
+                # though the SSE stream ended with response.completed. Prefer
+                # the explicit terminal SSE response, then backfill streamed
+                # output items/text below.
+                if terminal_response is not None:
+                    final_response = terminal_response
                 # PATCH: ChatGPT Codex backend streams valid output items
                 # but get_final_response() can return an empty output list.
                 # Backfill from collected items or synthesize from deltas.
