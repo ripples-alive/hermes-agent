@@ -2907,12 +2907,19 @@ class GatewayRunner:
                 continue
 
             platform_cfg = self.config.platforms.get(platform)
-            if platform_cfg is not None and not platform_cfg.gateway_restart_notification:
-                logger.info(
-                    "Shutdown notification suppressed for home channel: %s has gateway_restart_notification=false",
-                    platform.value,
-                )
-                continue
+            if platform_cfg is not None:
+                if not platform_cfg.gateway_restart_notification:
+                    logger.info(
+                        "Shutdown notification suppressed for home channel: %s has gateway_restart_notification=false",
+                        platform.value,
+                    )
+                    continue
+                if not platform_cfg.home_channel_restart_notification:
+                    logger.info(
+                        "Shutdown notification suppressed for home channel: %s has home_channel_restart_notification=false",
+                        platform.value,
+                    )
+                    continue
 
             dedup_key = (platform.value, str(home.chat_id), str(home.thread_id) if home.thread_id else None)
             if dedup_key in notified:
@@ -13262,12 +13269,19 @@ class GatewayRunner:
                 continue
 
             platform_cfg = self.config.platforms.get(platform)
-            if platform_cfg is not None and not platform_cfg.gateway_restart_notification:
-                logger.info(
-                    "Home-channel startup notification suppressed: %s has gateway_restart_notification=false",
-                    platform.value,
-                )
-                continue
+            if platform_cfg is not None:
+                if not platform_cfg.gateway_restart_notification:
+                    logger.info(
+                        "Home-channel startup notification suppressed: %s has gateway_restart_notification=false",
+                        platform.value,
+                    )
+                    continue
+                if not platform_cfg.home_channel_restart_notification:
+                    logger.info(
+                        "Home-channel startup notification suppressed: %s has home_channel_restart_notification=false",
+                        platform.value,
+                    )
+                    continue
 
             target = (platform.value, str(home.chat_id), str(home.thread_id) if home.thread_id else None)
             if target in skipped or target in delivered:

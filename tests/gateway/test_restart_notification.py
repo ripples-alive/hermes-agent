@@ -519,6 +519,28 @@ async def test_send_home_channel_startup_notification_skipped_when_flag_disabled
 
 
 @pytest.mark.asyncio
+async def test_send_home_channel_startup_notification_skipped_when_home_flag_disabled(
+    tmp_path, monkeypatch
+):
+    """home_channel_restart_notification=False only mutes generic home startup pings."""
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+
+    runner, adapter = make_restart_runner()
+    runner.config.platforms[Platform.TELEGRAM].home_channel = HomeChannel(
+        platform=Platform.TELEGRAM,
+        chat_id="home-42",
+        name="Ops Home",
+    )
+    runner.config.platforms[Platform.TELEGRAM].home_channel_restart_notification = False
+    adapter.send = AsyncMock()
+
+    delivered = await runner._send_home_channel_startup_notifications()
+
+    assert delivered == set()
+    adapter.send.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_send_home_channel_startup_notification_default_flag_true(
     tmp_path, monkeypatch
 ):

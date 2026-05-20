@@ -291,12 +291,17 @@ class PlatformConfig:
     # - "all": All chunks in multi-part replies thread to user's message
     reply_to_mode: str = "first"
 
-    # Whether the gateway is allowed to send "♻️ Gateway online" /
-    # "♻ Gateway restarted" lifecycle notifications on this platform.
-    # Default True preserves prior behavior. Set False on platforms used
-    # by end users (e.g. Slack) where operator-flavored restart pings are
-    # noise; keep True for back-channels where the operator wants them.
+    # Whether the gateway is allowed to send restart/shutdown lifecycle
+    # notifications on this platform at all. Default True preserves prior
+    # behavior. Set False to mute both active-session interruption warnings
+    # and generic home-channel restart pings.
     gateway_restart_notification: bool = True
+
+    # Whether generic home-channel restart/shutdown pings are sent for this
+    # platform. Default True preserves prior behavior. Set False for noisy
+    # home channels (for example Weixin/email) while still keeping
+    # active-session interruption warnings enabled via gateway_restart_notification.
+    home_channel_restart_notification: bool = True
 
     # Platform-specific settings
     extra: Dict[str, Any] = field(default_factory=dict)
@@ -307,6 +312,7 @@ class PlatformConfig:
             "extra": self.extra,
             "reply_to_mode": self.reply_to_mode,
             "gateway_restart_notification": self.gateway_restart_notification,
+            "home_channel_restart_notification": self.home_channel_restart_notification,
         }
         if self.token:
             result["token"] = self.token
@@ -330,6 +336,9 @@ class PlatformConfig:
             reply_to_mode=data.get("reply_to_mode", "first"),
             gateway_restart_notification=_coerce_bool(
                 data.get("gateway_restart_notification"), True
+            ),
+            home_channel_restart_notification=_coerce_bool(
+                data.get("home_channel_restart_notification"), True
             ),
             extra=data.get("extra", {}),
         )
@@ -770,6 +779,12 @@ def load_gateway_config() -> GatewayConfig:
                         existing = {}
                     # Deep-merge extra dicts so gateway.json defaults survive
                     merged_extra = {**existing.get("extra", {}), **plat_block.get("extra", {})}
+                    for _restart_key in (
+                        "gateway_restart_notification",
+                        "home_channel_restart_notification",
+                    ):
+                        if _restart_key in plat_block:
+                            merged_extra.pop(_restart_key, None)
                     if plat_name == Platform.SLACK.value and "enabled" in plat_block:
                         merged_extra["_enabled_explicit"] = True
                     merged = {**existing, **plat_block}
@@ -819,6 +834,14 @@ def load_gateway_config() -> GatewayConfig:
                     bridged["reply_prefix"] = platform_cfg["reply_prefix"]
                 if "reply_in_thread" in platform_cfg:
                     bridged["reply_in_thread"] = platform_cfg["reply_in_thread"]
+                if "gateway_restart_notification" in platform_cfg:
+                    bridged["gateway_restart_notification"] = platform_cfg[
+                        "gateway_restart_notification"
+                    ]
+                if "home_channel_restart_notification" in platform_cfg:
+                    bridged["home_channel_restart_notification"] = platform_cfg[
+                        "home_channel_restart_notification"
+                    ]
                 if "require_mention" in platform_cfg:
                     bridged["require_mention"] = platform_cfg["require_mention"]
                 if "free_response_channels" in platform_cfg:
@@ -855,6 +878,14 @@ def load_gateway_config() -> GatewayConfig:
                 plat_data, extra = _ensure_platform_extra_dict(platforms_data, plat.value)
                 if enabled_was_explicit:
                     plat_data["enabled"] = platform_cfg["enabled"]
+                if "gateway_restart_notification" in bridged:
+                    plat_data["gateway_restart_notification"] = bridged.pop(
+                        "gateway_restart_notification"
+                    )
+                if "home_channel_restart_notification" in bridged:
+                    plat_data["home_channel_restart_notification"] = bridged.pop(
+                        "home_channel_restart_notification"
+                    )
                 if plat == Platform.SLACK and enabled_was_explicit:
                     extra["_enabled_explicit"] = True
                 extra.update(bridged)

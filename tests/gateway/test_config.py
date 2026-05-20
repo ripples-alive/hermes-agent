@@ -70,6 +70,20 @@ class TestPlatformConfigRoundtrip:
         restored = PlatformConfig.from_dict({"gateway_restart_notification": "false"})
         assert restored.gateway_restart_notification is False
 
+    def test_home_channel_restart_notification_defaults_true(self):
+        assert PlatformConfig().home_channel_restart_notification is True
+        assert PlatformConfig.from_dict({}).home_channel_restart_notification is True
+
+    def test_home_channel_restart_notification_roundtrip_false(self):
+        pc = PlatformConfig(enabled=True, home_channel_restart_notification=False)
+        restored = PlatformConfig.from_dict(pc.to_dict())
+        assert restored.home_channel_restart_notification is False
+        assert restored.gateway_restart_notification is True
+
+    def test_home_channel_restart_notification_coerces_quoted_false(self):
+        restored = PlatformConfig.from_dict({"home_channel_restart_notification": "false"})
+        assert restored.home_channel_restart_notification is False
+
 
 class TestGetConnectedPlatforms:
     def test_returns_enabled_with_token(self):
@@ -356,6 +370,30 @@ class TestLoadGatewayConfig:
 
         assert config.platforms[Platform.API_SERVER].enabled is False
         assert Platform.API_SERVER not in config.get_connected_platforms()
+
+    def test_bridges_home_channel_restart_notification_from_platforms_yaml(
+        self, tmp_path, monkeypatch
+    ):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        config_path = hermes_home / "config.yaml"
+        config_path.write_text(
+            "platforms:\n"
+            "  weixin:\n"
+            "    home_channel_restart_notification: false\n"
+            "  email:\n"
+            "    home_channel_restart_notification: \"false\"\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+
+        assert config.platforms[Platform.WEIXIN].home_channel_restart_notification is False
+        assert config.platforms[Platform.EMAIL].home_channel_restart_notification is False
+        assert config.platforms[Platform.WEIXIN].gateway_restart_notification is True
+        assert config.platforms[Platform.EMAIL].gateway_restart_notification is True
 
     def test_bridges_quoted_false_session_notify_from_config_yaml(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
