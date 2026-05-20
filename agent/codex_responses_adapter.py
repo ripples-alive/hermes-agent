@@ -924,7 +924,12 @@ def _normalize_codex_response(response: Any) -> tuple[Any, str]:
             item_status = None
 
         if item_status in {"queued", "in_progress", "incomplete"}:
-            has_incomplete_items = True
+            # A stale reasoning.status can remain in_progress inside an otherwise
+            # completed Responses object. Do not let reasoning status alone hold
+            # open a completed final message; reasoning-only responses are still
+            # treated as incomplete below when there is no user-visible text.
+            if item_type != "reasoning":
+                has_incomplete_items = True
 
         if item_type == "message":
             item_phase = getattr(item, "phase", None)
@@ -1071,13 +1076,12 @@ def _normalize_codex_response(response: Any) -> tuple[Any, str]:
         finish_reason = "incomplete"
     elif has_incomplete_items or (saw_commentary_phase and not saw_final_answer_phase):
         finish_reason = "incomplete"
-    elif reasoning_items_raw and not final_text:
-        # Response contains only reasoning (encrypted thinking state) with
-        # no visible content or tool calls.  The model is still thinking and
-        # needs another turn to produce the actual answer.  Marking this as
-        # "stop" would send it into the empty-content retry loop which burns
-        # 3 retries then fails — treat it as incomplete instead so the Codex
-        # continuation path handles it correctly.
+    elif (reasoning_items_raw or reasoning_parts) and not final_text:
+        # Response contains only reasoning (thinking state) with no visible
+        # content or tool calls.  The model is still thinking and needs another
+        # turn to produce the actual answer.  Some relays omit encrypted_content
+        # while still returning reasoning summaries, so check both captured
+        # reasoning items and text summaries.
         finish_reason = "incomplete"
     else:
         finish_reason = "stop"

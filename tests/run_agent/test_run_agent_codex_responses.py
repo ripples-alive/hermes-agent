@@ -1167,6 +1167,47 @@ def test_normalize_codex_response_preserves_message_status_for_replay(monkeypatc
     assert assistant_message.codex_message_items[0]["status"] == "in_progress"
 
 
+def test_normalize_codex_response_ignores_stale_reasoning_status_when_message_completed(monkeypatch):
+    """A completed final message should not be held open by a stale reasoning item.
+
+    Some Responses-compatible relays return a top-level completed response with a
+    completed assistant message plus a reasoning item whose status is still
+    in_progress. The user-visible message is terminal in that shape.
+    """
+    agent = _build_agent(monkeypatch)
+    from agent.codex_responses_adapter import _normalize_codex_response
+
+    response = SimpleNamespace(
+        output=[
+            SimpleNamespace(
+                type="reasoning",
+                id="rs_stale",
+                status="in_progress",
+                summary=[],
+            ),
+            SimpleNamespace(
+                type="message",
+                id="msg_completed",
+                role="assistant",
+                status="completed",
+                content=[SimpleNamespace(type="output_text", text="Investment brief complete.")],
+            ),
+        ],
+        usage=SimpleNamespace(input_tokens=40, output_tokens=20, total_tokens=60),
+        status="completed",
+        incomplete_details=None,
+        error=None,
+        model="gpt-5.5",
+    )
+
+    assistant_message, finish_reason = _normalize_codex_response(response)
+
+    assert finish_reason == "stop"
+    assert assistant_message.content == "Investment brief complete."
+    assert assistant_message.codex_message_items[0]["id"] == "msg_completed"
+    assert assistant_message.codex_message_items[0]["status"] == "completed"
+
+
 def test_normalize_codex_response_detects_leaked_tool_call_text(monkeypatch):
     """Harmony-style `to=functions.foo` leaked into assistant content with no
     structured function_call items must be treated as incomplete so the
@@ -1638,6 +1679,31 @@ def test_normalize_codex_response_marks_reasoning_only_as_incomplete(monkeypatch
     assert assistant_message.codex_reasoning_items is not None
     assert len(assistant_message.codex_reasoning_items) == 1
     assert assistant_message.codex_reasoning_items[0]["encrypted_content"] == "enc_abc123"
+
+
+def test_normalize_codex_response_marks_reasoning_only_without_encrypted_content_as_incomplete(monkeypatch):
+    """Reasoning-only output without replayable encrypted content still needs continuation."""
+    agent = _build_agent(monkeypatch)
+    response = SimpleNamespace(
+        output=[
+            SimpleNamespace(
+                type="reasoning",
+                id="rs_no_encrypted_content",
+                summary=[SimpleNamespace(type="summary_text", text="Still thinking...")],
+                status="in_progress",
+            )
+        ],
+        usage=SimpleNamespace(input_tokens=50, output_tokens=100, total_tokens=150),
+        status="completed",
+        model="gpt-5-codex",
+    )
+    from agent.codex_responses_adapter import _normalize_codex_response
+    assistant_message, finish_reason = _normalize_codex_response(response)
+
+    assert finish_reason == "incomplete"
+    assert assistant_message.content == ""
+    assert assistant_message.codex_reasoning_items is None
+    assert assistant_message.reasoning == "Still thinking..."
 
 
 def test_normalize_codex_response_reasoning_with_content_is_stop(monkeypatch):
