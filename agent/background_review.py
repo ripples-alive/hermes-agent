@@ -390,19 +390,23 @@ def _run_review_in_thread(
             # parent below so memory(action="add") writes from
             # the review still land on disk; the review just
             # has zero side effects on external providers.
-            review_agent = AIAgent(
-                model=agent.model,
-                max_iterations=16,
-                quiet_mode=True,
-                platform=agent.platform,
-                provider=agent.provider,
-                api_mode=_parent_api_mode,
-                base_url=_parent_runtime.get("base_url") or None,
-                api_key=_parent_runtime.get("api_key") or None,
-                credential_pool=getattr(agent, "_credential_pool", None),
-                parent_session_id=agent.session_id,
-                skip_memory=True,
-            )
+            review_kwargs: Dict[str, Any] = {
+                "model": agent.model,
+                "max_iterations": 16,
+                "quiet_mode": True,
+                "platform": agent.platform,
+                "provider": agent.provider,
+                "api_mode": _parent_api_mode,
+                "base_url": _parent_runtime.get("base_url") or None,
+                "api_key": _parent_runtime.get("api_key") or None,
+                "credential_pool": getattr(agent, "_credential_pool", None),
+                "parent_session_id": agent.session_id,
+                "skip_memory": True,
+            }
+            _parent_reasoning_config = getattr(agent, "reasoning_config", None)
+            if _parent_reasoning_config is not None:
+                review_kwargs["reasoning_config"] = _parent_reasoning_config
+            review_agent = AIAgent(**review_kwargs)
             review_agent._memory_write_origin = "background_review"
             review_agent._memory_write_context = "background_review"
             review_agent._memory_store = agent._memory_store

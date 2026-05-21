@@ -195,6 +195,49 @@ def test_background_review_summary_is_attributed_to_self_improvement_loop(monkey
     )
 
 
+def test_background_review_fork_inherits_parent_reasoning_config(monkeypatch):
+    """The background review fork should use the parent's reasoning dial.
+
+    It inherits the parent's model/provider/runtime, so the outbound review
+    request must also inherit ``reasoning_config``. Otherwise a parent set to
+    e.g. xhigh silently falls back to the transport default of medium.
+    """
+    captured_kwargs: dict = {}
+
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self._session_messages = []
+
+        def run_conversation(self, **kwargs):
+            pass
+
+        def shutdown_memory_provider(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(run_agent_module, "AIAgent", FakeReviewAgent)
+    monkeypatch.setattr(run_agent_module.threading, "Thread", ImmediateThread)
+
+    agent = _bare_agent()
+    parent_reasoning_config = {"enabled": True, "effort": "xhigh"}
+    setattr(agent, "reasoning_config", parent_reasoning_config)
+
+    AIAgent._spawn_background_review(
+        agent,
+        messages_snapshot=[{"role": "user", "content": "hello"}],
+        review_skills=True,
+    )
+
+    assert captured_kwargs.get("reasoning_config") == parent_reasoning_config, (
+        "Background review fork inherits the parent's model/provider/runtime, "
+        "so it must also inherit the parent's reasoning_config instead of "
+        "falling back to the transport default reasoning effort."
+    )
+
+
 def test_background_review_fork_skips_external_memory_plugins(monkeypatch):
     """The background review fork must NOT touch external memory plugins.
 
