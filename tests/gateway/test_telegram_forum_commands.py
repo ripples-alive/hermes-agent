@@ -76,6 +76,7 @@ async def test_ensure_forum_commands_registers_once():
                 await adapter._ensure_forum_commands(msg)
 
     assert -123 in adapter._forum_command_registered
+    mock_menu.assert_called_once_with(max_commands=100)
     adapter._bot.set_my_commands.assert_awaited_once()
     args, kwargs = adapter._bot.set_my_commands.call_args
     assert len(args[0]) == 2  # two BotCommand instances
