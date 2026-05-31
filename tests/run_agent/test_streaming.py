@@ -832,25 +832,27 @@ class TestCodexStreamCallbacks:
             phase="final_answer",
             content=[SimpleNamespace(type="output_text", text="done")],
         )
-        mock_stream = MagicMock()
-        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
-        mock_stream.__exit__ = MagicMock(return_value=False)
-        mock_stream.__iter__ = MagicMock(return_value=iter([
+        # The event-driven stream path consumes raw `responses.create(stream=True)`
+        # events and does not trust the SDK helper's reconstructed final object.
+        events = [
             SimpleNamespace(type="response.output_item.done", item=output_item),
             SimpleNamespace(
                 type="response.completed",
                 response=SimpleNamespace(status="completed", output=[], incomplete_details=None),
             ),
-        ]))
-        # Mirrors the observed failure: the SDK/custom relay final object kept
-        # the earlier in_progress status even though the stream ended completed.
-        mock_stream.get_final_response.return_value = SimpleNamespace(
-            status="in_progress",
-            output=[],
-            incomplete_details=None,
-        )
+        ]
 
-        response = agent._run_codex_stream({}, client=SimpleNamespace(responses=SimpleNamespace(stream=MagicMock(return_value=mock_stream))))
+        class _FakeCreateStream:
+            def __iter__(self_inner):
+                return iter(events)
+
+            def close(self_inner):
+                return None
+
+        mock_client = MagicMock()
+        mock_client.responses.create.return_value = _FakeCreateStream()
+
+        response = agent._run_codex_stream({}, client=mock_client)
 
         assert response.status == "completed"
         normalized = agent._get_transport().normalize_response(response)
